@@ -39,6 +39,19 @@ export interface BorderCrossing {
   warningKinds?: BorderWarningKind[];
 }
 
+export interface SuggestedStopover {
+  label: string;
+  coordinates: [number, number];
+  /** Drive time from the start of this segment to the stopover */
+  driveMinutesFromSegmentStart: number;
+  /** Drive distance from the start of this segment to the stopover */
+  distanceKmFromSegmentStart: number;
+  /** Cumulative drive time from the trip origin to the stopover */
+  driveMinutesFromTripStart: number;
+  /** Cumulative drive distance from the trip origin to the stopover */
+  distanceKmFromTripStart: number;
+}
+
 export interface RouteSegment {
   fromWaypointId: string;
   toWaypointId: string;
@@ -51,8 +64,15 @@ export interface RouteSegment {
   exceedsCap: boolean;
   /** Coordinate where the driving cap is reached along this segment */
   midpointCoords?: [number, number];
-  suggestedStopovers?: string[];
+  suggestedStopovers?: SuggestedStopover[];
   borderCrossings: BorderCrossing[];
+}
+
+export interface StopoverHover {
+  label: string;
+  coordinates: [number, number];
+  driveMinutesFromTripStart: number;
+  distanceKmFromTripStart: number;
 }
 
 export interface ManeuverStep {

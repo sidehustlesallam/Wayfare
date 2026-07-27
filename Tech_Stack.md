@@ -1,45 +1,52 @@
 # Technical Stack & Service Architecture — Wayfare
 
 ## 1. Core Framework & Build Infrastructure
-- **Framework:** React 18+ with TypeScript (Strict Mode)
-- **Build Tool:** Vite (configured for GitHub Pages static SPA deployment base paths)
-- **Styling:** Tailwind CSS + Lucide React (UI icons)
-- **State Management:** Zustand with `persist` middleware (LocalStorage support)
+- **Framework:** React 18+ with TypeScript (strict mode, no `any`)
+- **Build Tool:** Vite 6 (`base: './'` for GitHub Pages)
+- **Styling:** Tailwind CSS + Lucide React
+- **State:** Zustand with `persist` (LocalStorage)
+- **Testing:** Vitest + React Testing Library + jsdom
+- **PWA:** `vite-plugin-pwa` (auto-update SW, Workbox runtime caching)
+- **CI/CD:** `.github/workflows/deploy.yml` — `npm test` → `npm run build` → GitHub Pages
 
 ## 2. Geospatial & Mapping Services (Zero API Key)
 - **Map Renderer:** Leaflet + `react-leaflet`
-- **Map Tiles:** OpenStreetMap Standard (`tile.openstreetmap.org/{z}/{x}/{y}.png`)
-- **Routing Engine:** Open Source Routing Machine (OSRM) Public API (`router.project-osrm.org` / `routing.openstreetmap.de`)
-- **Geocoding & Location Search:** Nominatim OpenStreetMap API (`nominatim.openstreetmap.org`)
+- **Default Tiles:** CARTO Voyager (English labels)  
+  `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png`
+- **Alternate Tiles:** OpenStreetMap Standard (when `customMapTiles` is enabled)
+- **Routing:** OSRM Public API (`router.project-osrm.org`) — `steps=true`, scenic uses `exclude=motorway`
+- **Geocoding:** Nominatim (`nominatim.openstreetmap.org`) — debounced ≥300ms
+- **Elevation:** Open-Meteo Elevation API (`api.open-meteo.com/v1/elevation`)
+
+Resolved via `src/config/mapTiles.ts` → `getMapTileConfig()`.
 
 ## 3. Architecture & Service Abstraction
-To ensure modularity and support future premium providers (Mapbox, Google Maps, OpenRouteService), external services are accessed exclusively through interface abstractions:
+
+UI components never call provider APIs directly. They depend on adapters + hooks:
 
 ```
 src/
 ├── assets/
 ├── components/
-│   ├── common/        # Buttons, Modals, Cards, Dropdowns
-│   ├── map/           # Map container, Custom Markers, Polylines, Border Badges
-│   ├── planner/       # Waypoint list, Day segments, Itinerary summary, Driving cap controls
-│   └── widget/        # Fuel & cost calculator widget
-├── config/            # Feature flags & environment defaults (`features.ts`)
-├── hooks/             # Custom React hooks (`useRouting`, `useGeocoding`, `useBorderDetection`)
-├── services/          # API Adapters (Zero-key OSRM & Nominatim adapters)
-│   ├── geocoding/
-│   │   ├── GeocodingAdapter.ts
-│   │   └── NominatimService.ts
-│   └── routing/
-│       ├── RoutingAdapter.ts
-│       └── OSRMService.ts
-├── store/             # Zustand state stores (`useTripStore.ts`)
-├── types/             # Shared TypeScript models (Waypoints, Routes, Borders, Cost)
-└── utils/             # Polyline decoders, GeoJSON border math, LZ-string URL encoders
+│   ├── common/        # Button, Card, Dropdown, Modal, Toast
+│   ├── map/           # TripMap, polylines, markers, elevation drawer, border badges
+│   ├── planner/       # Waypoints, caps, borders, roadbook, route profile, itinerary
+│   └── widget/        # Fuel calculator
+├── config/            # features.ts, defaults.ts, mapTiles.ts
+├── hooks/             # useRouting, useGeocoding, useElevationProfile, useBorderDetection, …
+├── services/
+│   ├── geocoding/     # GeocodingAdapter, NominatimService
+│   ├── routing/       # RoutingAdapter, OSRMService
+│   └── elevation/     # ElevationAdapter, OpenMeteoElevationService
+├── store/             # useTripStore.ts
+├── test/              # Vitest setup + Leaflet mocks
+├── types/             # Shared TypeScript models
+└── utils/             # polyline, fuel, borders, borderRules, elevation, roadbook, tripShare, …
 ```
 
 ## 4. Key Data Models
 
-### Waypoint Model
+### Waypoint
 ```typescript
 export interface Waypoint {
   id: string;
@@ -48,27 +55,86 @@ export interface Waypoint {
   lng: number;
   stopType: 'must-visit' | 'overnight';
   customDurationHours?: number;
+  countryCode?: string;
+  countryName?: string;
 }
 ```
 
-### Route Segment & Border Model
+### Trip settings
 ```typescript
+export type RouteProfile = 'fastest' | 'scenic';
+
+export interface TripSettings {
+  drivingCapHours: number;
+  vehicleEfficiency: number;   // L/100km (or kWh/100km for EV)
+  fuelPricePerLitre: number;   // per litre / kWh
+  fuelType: 'gasoline' | 'diesel' | 'ev';
+  unitSystem: 'metric' | 'imperial';
+  routeProfile: RouteProfile;
+}
+```
+
+### Route segment, stopovers, elevation
+```typescript
+export interface SuggestedStopover {
+  label: string;
+  coordinates: [number, number];
+  driveMinutesFromSegmentStart: number;
+  distanceKmFromSegmentStart: number;
+  driveMinutesFromTripStart: number;
+  distanceKmFromTripStart: number;
+}
+
 export interface RouteSegment {
   fromWaypointId: string;
   toWaypointId: string;
   distanceKm: number;
   durationMinutes: number;
-  geometryPolyline: string; // Encoded polyline or LatLng array
+  geometry: LatLng[];          // haversine-split; last leg keeps remainder
+  geometryPolyline: string;
   exceedsCap: boolean;
   midpointCoords?: [number, number];
-  suggestedStopovers?: string[];
-  borderCrossings: BorderCrossing[];
+  suggestedStopovers?: SuggestedStopover[];
+  borderCrossings: BorderCrossing[]; // mid-route samples, not just endpoints
 }
 
-export interface BorderCrossing {
-  fromCountry: string;
-  toCountry: string;
-  coordinates: [number, number];
-  warnings: string[]; // Vignette required, Passport check, Driving side, etc.
+export interface ManeuverStep {
+  index: number;
+  instruction: string;
+  streetName: string;
+  distanceMeters: number;
+  durationSeconds: number;
+  type: string;
+  modifier?: string;
+  location: LatLng;
+}
+
+export interface ElevationSample {
+  lat: number;
+  lng: number;
+  elevationMeters: number;
+  distanceKm: number;
 }
 ```
+
+## 5. State & Sharing
+- **Store:** `useTripStore` holds waypoints, settings, segments, geometry, steps, metrics, elevation profile/hover, and `stopoverHover` for map preview.
+- **Persist:** waypoints + settings only.
+- **Share:** `src/utils/tripShare.ts` LZ-String encode/decode (`#trip=` / `?trip=`).
+- **Hydration:** `useTripUrlHydration` applies shared trips after LocalStorage rehydrate (URL wins).
+- **Borders:** `OSRMService` samples each leg (`sampleGeometryForBorders`) → Nominatim reverse (cached) → `crossingsFromCountrySamples`.
+- **Polylines:** `splitGeometryByLegDistances` in `src/utils/polyline.ts` keeps over-cap dashes continuous to the last stop.
+
+## 6. Testing Layout
+| Suite | Focus |
+| --- | --- |
+| `borderRules.test.ts` | Crossing warnings (vignette, Schengen, driving side) |
+| `borders.test.ts` | Mid-route sample crossings + leg geometry split |
+| `costCalculator.test.ts` | Fuel math + unit conversions |
+| `elevation.test.ts` | Route sampling + high-altitude detection |
+| `roadbook.test.ts` | GPX + TXT roadbook generation |
+| `OSRMService.test.ts` | Aggregation, over-cap midpoints, scenic exclude |
+| `useTripStore.test.ts` | CRUD / reorder / share hydrate |
+| `WaypointList.test.tsx` | Stop-type toggles + DnD reorder wiring |
+
+Leaflet / react-leaflet are mocked in `src/test/mocks/leaflet.ts` for headless CI.

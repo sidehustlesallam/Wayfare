@@ -33,6 +33,7 @@ function resetStore() {
     isElevationLoading: false,
     elevationError: null,
     elevationHover: null,
+    stopoverHover: null,
   });
 }
 

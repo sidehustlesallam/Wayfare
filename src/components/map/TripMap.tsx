@@ -9,6 +9,7 @@ import { BorderBadges } from './BorderBadges';
 import { CapMidpointMarkers } from './CapMidpointMarkers';
 import { ElevationHoverMarker } from './ElevationHoverMarker';
 import { RoutePolylines } from './RoutePolylines';
+import { StopoverHoverMarker } from './StopoverHoverMarker';
 import { WaypointMarkers } from './WaypointMarkers';
 
 const DEFAULT_CENTER: [number, number] = [48.8566, 2.3522];
@@ -47,6 +48,8 @@ export function TripMap() {
   const segments = useTripStore((s) => s.segments);
   const fullGeometry = useTripStore((s) => s.fullGeometry);
   const elevationHover = useTripStore((s) => s.elevationHover);
+  const stopoverHover = useTripStore((s) => s.stopoverHover);
+  const unitSystem = useTripStore((s) => s.settings.unitSystem);
   const crossings = useBorderDetection();
   const tiles = useMemo(() => getMapTileConfig(), []);
 
@@ -72,6 +75,7 @@ export function TripMap() {
       />
       <BorderBadges crossings={crossings} />
       <ElevationHoverMarker sample={elevationHover} />
+      <StopoverHoverMarker hover={stopoverHover} unitSystem={unitSystem} />
     </MapContainer>
   );
 }

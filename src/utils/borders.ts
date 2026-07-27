@@ -3,7 +3,7 @@ import {
   countryDisplayName,
   getCrossingWarnings,
 } from './borderRules';
-import { coordinateAtDistance } from './polyline';
+import { coordinateAtDistance, haversineKm } from './polyline';
 
 export interface CountryHint {
   code: string;
@@ -45,6 +45,71 @@ export function estimateBorderCoordinates(
 
   if (!mid) return [0, 0];
   return [mid.lat, mid.lng];
+}
+
+/**
+ * Sample points along a polyline at roughly `intervalKm` spacing
+ * (always including start + end).
+ */
+export function sampleGeometryForBorders(
+  geometry: LatLng[],
+  intervalKm = 75,
+  maxSamples = 12,
+): LatLng[] {
+  if (geometry.length === 0) return [];
+  if (geometry.length === 1) return [geometry[0]];
+
+  let total = 0;
+  for (let i = 1; i < geometry.length; i++) {
+    total += haversineKm(geometry[i - 1], geometry[i]);
+  }
+
+  const count = Math.min(
+    maxSamples,
+    Math.max(2, Math.ceil(total / intervalKm) + 1),
+  );
+
+  const samples: LatLng[] = [];
+  for (let i = 0; i < count; i++) {
+    const target = (i / (count - 1)) * total;
+    const point = coordinateAtDistance(geometry, target);
+    if (point) samples.push(point);
+  }
+
+  return samples;
+}
+
+/**
+ * Walk sampled countries and emit a crossing whenever the ISO code changes.
+ */
+export function crossingsFromCountrySamples(
+  samples: Array<{ point: LatLng; country: CountryHint | undefined }>,
+): BorderCrossing[] {
+  const crossings: BorderCrossing[] = [];
+  let previous: { point: LatLng; country: CountryHint } | undefined;
+
+  for (const sample of samples) {
+    if (!sample.country) continue;
+
+    if (
+      previous &&
+      previous.country.code.toUpperCase() !== sample.country.code.toUpperCase()
+    ) {
+      const crossing = buildBorderCrossing(
+        previous.country,
+        sample.country,
+        [
+          (previous.point.lat + sample.point.lat) / 2,
+          (previous.point.lng + sample.point.lng) / 2,
+        ],
+      );
+      if (crossing) crossings.push(crossing);
+    }
+
+    previous = { point: sample.point, country: sample.country };
+  }
+
+  return crossings;
 }
 
 /** Collect unique border crossings across all route segments. */

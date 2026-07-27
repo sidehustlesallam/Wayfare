@@ -90,3 +90,61 @@ export function coordinateAtDistance(
 
   return geometry[geometry.length - 1];
 }
+
+/**
+ * Find the geometry vertex index at (or just past) `targetKm` from `startIndex`,
+ * using haversine distances. Returns the last index when the remaining path is
+ * shorter than the target (caller should clamp for final legs).
+ */
+export function findIndexAtDistance(
+  full: LatLng[],
+  startIndex: number,
+  targetKm: number,
+): number {
+  if (full.length === 0) return 0;
+  if (startIndex >= full.length - 1) return full.length - 1;
+  if (targetKm <= 0) return startIndex;
+
+  let travelled = 0;
+  let index = startIndex;
+
+  for (let i = startIndex + 1; i < full.length; i++) {
+    travelled += haversineKm(full[i - 1], full[i]);
+    index = i;
+    if (travelled >= targetKm) break;
+  }
+
+  return index;
+}
+
+/**
+ * Slice `full` into contiguous leg geometries matching each leg's OSRM distance.
+ * The final leg always consumes all remaining vertices so the route reaches the end.
+ */
+export function splitGeometryByLegDistances(
+  full: LatLng[],
+  legDistancesKm: number[],
+): LatLng[][] {
+  if (full.length === 0 || legDistancesKm.length === 0) {
+    return legDistancesKm.map(() => []);
+  }
+
+  const slices: LatLng[][] = [];
+  let cursor = 0;
+
+  for (let i = 0; i < legDistancesKm.length; i++) {
+    const isLast = i === legDistancesKm.length - 1;
+
+    if (isLast) {
+      slices.push(full.slice(cursor));
+      break;
+    }
+
+    const endIndex = findIndexAtDistance(full, cursor, legDistancesKm[i]);
+    const slice = full.slice(cursor, endIndex + 1);
+    slices.push(slice.length > 0 ? slice : [full[cursor] ?? full[0]]);
+    cursor = Math.max(cursor, endIndex);
+  }
+
+  return slices;
+}

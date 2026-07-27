@@ -6,16 +6,21 @@ import type {
   RouteRequest,
   RouteResult,
   RouteSegment,
+  SuggestedStopover,
   Waypoint,
 } from '../../types';
 import {
-  buildBorderCrossing,
-  estimateBorderCoordinates,
+  crossingsFromCountrySamples,
+  sampleGeometryForBorders,
   type CountryHint,
 } from '../../utils/borders';
 import { countryDisplayName } from '../../utils/borderRules';
 import { aggregateRouteMetrics } from '../../utils/fuel';
-import { coordinateAtDistance, decodePolyline } from '../../utils/polyline';
+import {
+  coordinateAtDistance,
+  decodePolyline,
+  splitGeometryByLegDistances,
+} from '../../utils/polyline';
 import type { RoutingAdapter } from './RoutingAdapter';
 import { nominatimService } from '../geocoding/NominatimService';
 
@@ -72,7 +77,9 @@ function buildInstruction(step: OsrmStep): string {
         ? `Take the ramp${mod} toward ${street}`
         : `Take the ramp${mod}`;
     case 'fork':
-      return street ? `Keep${mod} at the fork onto ${street}` : `Keep${mod} at the fork`;
+      return street
+        ? `Keep${mod} at the fork onto ${street}`
+        : `Keep${mod} at the fork`;
     case 'roundabout':
     case 'rotary':
       return street
@@ -83,7 +90,9 @@ function buildInstruction(step: OsrmStep): string {
     case 'new name':
       return street ? `Continue on ${street}` : 'Continue';
     case 'end of road':
-      return street ? `At the end of the road, turn${mod} onto ${street}` : `Turn${mod} at the end of the road`;
+      return street
+        ? `At the end of the road, turn${mod} onto ${street}`
+        : `Turn${mod} at the end of the road`;
     default:
       return street
         ? `${type.replace(/_/g, ' ')}${mod} onto ${street}`
@@ -93,10 +102,11 @@ function buildInstruction(step: OsrmStep): string {
 
 /**
  * Zero-key OSRM routing adapter.
- * Supports fastest vs scenic (exclude motorway) profiles and turn steps.
+ * Supports fastest vs scenic profiles, mid-route border detection, and steps.
  */
 export class OSRMService implements RoutingAdapter {
   private readonly baseUrl: string;
+  private readonly countryCache = new Map<string, CountryHint | undefined>();
 
   constructor(baseUrl: string = OSRM_BASE_URL) {
     this.baseUrl = baseUrl;
@@ -131,7 +141,6 @@ export class OSRMService implements RoutingAdapter {
     });
 
     if (routeProfile === 'scenic') {
-      // Prefer secondary / trunk roads by excluding motorways
       params.set('exclude', 'motorway');
     }
 
@@ -183,60 +192,63 @@ export class OSRMService implements RoutingAdapter {
     signal?: AbortSignal,
   ): Promise<RouteSegment[]> {
     const capMinutes = drivingCapHours * 60;
-    const segments: RouteSegment[] = [];
-    let geometryCursor = 0;
-
-    const countries = await Promise.all(
-      waypoints.map((wp) => this.resolveCountry(wp, signal)),
+    const legDistancesKm = route.legs.map((leg) => leg.distance / 1000);
+    const legGeometries = splitGeometryByLegDistances(
+      fullGeometry,
+      legDistancesKm,
     );
+
+    const segments: RouteSegment[] = [];
+    let tripDistanceKm = 0;
+    let tripDurationMinutes = 0;
 
     for (let i = 0; i < waypoints.length - 1; i++) {
       const from = waypoints[i];
       const to = waypoints[i + 1];
       const leg = route.legs[i];
-
       if (!leg) continue;
 
       const distanceKm = leg.distance / 1000;
       const durationMinutes = leg.duration / 60;
       const exceedsCap = durationMinutes > capMinutes;
-
-      const legGeometry = sliceGeometryForLeg(
-        fullGeometry,
-        geometryCursor,
-        distanceKm,
-      );
-      geometryCursor = Math.max(
-        geometryCursor,
-        findEndIndex(fullGeometry, geometryCursor, distanceKm),
-      );
+      const legGeometry = legGeometries[i] ?? [];
 
       let midpointCoords: [number, number] | undefined;
-      let suggestedStopovers: string[] | undefined;
+      let suggestedStopovers: SuggestedStopover[] | undefined;
+      let capDistanceKm = 0;
 
       if (exceedsCap && legGeometry.length > 0) {
         const avgSpeedKmh =
           durationMinutes > 0 ? distanceKm / (durationMinutes / 60) : 80;
-        const capDistanceKm = avgSpeedKmh * drivingCapHours;
+        capDistanceKm = avgSpeedKmh * drivingCapHours;
         const mid = coordinateAtDistance(legGeometry, capDistanceKm);
 
         if (mid) {
           midpointCoords = [mid.lat, mid.lng];
-          suggestedStopovers = await this.suggestStopovers(mid, signal);
+          const labels = await this.suggestStopovers(mid, signal);
+          const driveMinutesFromSegmentStart = Math.round(capMinutes);
+          const distanceKmFromSegmentStart =
+            Math.round(capDistanceKm * 10) / 10;
+
+          suggestedStopovers = labels.map((label) => ({
+            label,
+            coordinates: midpointCoords!,
+            driveMinutesFromSegmentStart,
+            distanceKmFromSegmentStart,
+            driveMinutesFromTripStart: Math.round(
+              tripDurationMinutes + driveMinutesFromSegmentStart,
+            ),
+            distanceKmFromTripStart:
+              Math.round((tripDistanceKm + distanceKmFromSegmentStart) * 10) /
+              10,
+          }));
         }
       }
 
-      const borderCrossings = [];
-      const fromCountry = countries[i];
-      const toCountry = countries[i + 1];
-      if (fromCountry && toCountry) {
-        const crossing = buildBorderCrossing(
-          fromCountry,
-          toCountry,
-          estimateBorderCoordinates(legGeometry, distanceKm),
-        );
-        if (crossing) borderCrossings.push(crossing);
-      }
+      const borderCrossings = await this.detectBordersAlongLeg(
+        legGeometry,
+        signal,
+      );
 
       segments.push({
         fromWaypointId: from.id,
@@ -250,36 +262,62 @@ export class OSRMService implements RoutingAdapter {
         suggestedStopovers,
         borderCrossings,
       });
+
+      tripDistanceKm += distanceKm;
+      tripDurationMinutes += durationMinutes;
     }
 
     return segments;
   }
 
-  private async resolveCountry(
-    waypoint: Waypoint,
+  /**
+   * Sample the leg geometry and reverse-geocode to find every country change,
+   * not only the waypoint endpoints.
+   */
+  private async detectBordersAlongLeg(
+    geometry: LatLng[],
+    signal?: AbortSignal,
+  ): Promise<ReturnType<typeof crossingsFromCountrySamples>> {
+    if (geometry.length < 2) return [];
+
+    const samples = sampleGeometryForBorders(geometry, 75, 12);
+    const annotated: Array<{
+      point: LatLng;
+      country: CountryHint | undefined;
+    }> = [];
+
+    for (const point of samples) {
+      if (signal?.aborted) break;
+      const country = await this.resolveCountryAt(point.lat, point.lng, signal);
+      annotated.push({ point, country });
+    }
+
+    return crossingsFromCountrySamples(annotated);
+  }
+
+  private async resolveCountryAt(
+    lat: number,
+    lng: number,
     signal?: AbortSignal,
   ): Promise<CountryHint | undefined> {
-    if (waypoint.countryCode) {
-      return {
-        code: waypoint.countryCode.toUpperCase(),
-        name:
-          waypoint.countryName ??
-          countryDisplayName(waypoint.countryCode, waypoint.label),
-      };
+    const cacheKey = `${lat.toFixed(2)},${lng.toFixed(2)}`;
+    if (this.countryCache.has(cacheKey)) {
+      return this.countryCache.get(cacheKey);
     }
 
     try {
-      const reverse = await nominatimService.reverse(
-        waypoint.lat,
-        waypoint.lng,
-        signal,
-      );
-      if (!reverse?.countryCode) return undefined;
-      return {
-        code: reverse.countryCode,
-        name: reverse.countryName ?? countryDisplayName(reverse.countryCode),
-      };
+      const reverse = await nominatimService.reverse(lat, lng, signal);
+      const hint = reverse?.countryCode
+        ? {
+            code: reverse.countryCode,
+            name:
+              reverse.countryName ?? countryDisplayName(reverse.countryCode),
+          }
+        : undefined;
+      this.countryCache.set(cacheKey, hint);
+      return hint;
     } catch {
+      this.countryCache.set(cacheKey, undefined);
       return undefined;
     }
   }
@@ -338,39 +376,6 @@ function flattenSteps(legs: OsrmLeg[]): ManeuverStep[] {
   }
 
   return steps;
-}
-
-function sliceGeometryForLeg(
-  full: LatLng[],
-  startIndex: number,
-  targetKm: number,
-): LatLng[] {
-  const endIndex = findEndIndex(full, startIndex, targetKm);
-  return full.slice(startIndex, endIndex + 1);
-}
-
-function findEndIndex(
-  full: LatLng[],
-  startIndex: number,
-  targetKm: number,
-): number {
-  if (full.length === 0) return 0;
-
-  let travelled = 0;
-  let index = startIndex;
-
-  for (let i = startIndex + 1; i < full.length; i++) {
-    const prev = full[i - 1];
-    const curr = full[i];
-    const dLat = curr.lat - prev.lat;
-    const dLng = curr.lng - prev.lng;
-    const approxKm = Math.sqrt(dLat * dLat + dLng * dLng) * 111;
-    travelled += approxKm;
-    index = i;
-    if (travelled >= targetKm) break;
-  }
-
-  return index;
 }
 
 export const osrmService = new OSRMService();

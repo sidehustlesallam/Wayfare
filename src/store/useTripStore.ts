@@ -14,6 +14,7 @@ import type {
   RouteMetrics,
   RouteProfile,
   RouteSegment,
+  StopoverHover,
   StopType,
   TripSettings,
   UnitSystem,
@@ -43,6 +44,7 @@ interface TripState {
   isElevationLoading: boolean;
   elevationError: string | null;
   elevationHover: ElevationSample | null;
+  stopoverHover: StopoverHover | null;
 
   addWaypoint: (waypoint: Omit<Waypoint, 'id'> & { id?: string }) => void;
   insertWaypoint: (
@@ -76,6 +78,7 @@ interface TripState {
   setElevationProfile: (profile: ElevationProfile | null) => void;
   setElevationStatus: (isLoading: boolean, error?: string | null) => void;
   setElevationHover: (sample: ElevationSample | null) => void;
+  setStopoverHover: (hover: StopoverHover | null) => void;
 }
 
 function toWaypoint(
@@ -137,6 +140,7 @@ export const useTripStore = create<TripState>()(
       isElevationLoading: false,
       elevationError: null,
       elevationHover: null,
+      stopoverHover: null,
 
       addWaypoint: (waypoint) => {
         const next = toWaypoint(waypoint);
@@ -180,6 +184,7 @@ export const useTripStore = create<TripState>()(
           elevationProfile: null,
           elevationError: null,
           elevationHover: null,
+          stopoverHover: null,
           isElevationLoading: false,
         });
       },
@@ -197,6 +202,7 @@ export const useTripStore = create<TripState>()(
           elevationProfile: null,
           elevationError: null,
           elevationHover: null,
+          stopoverHover: null,
         });
       },
 
@@ -308,6 +314,7 @@ export const useTripStore = create<TripState>()(
           elevationProfile: null,
           elevationError: null,
           elevationHover: null,
+          stopoverHover: null,
           isElevationLoading: false,
         });
       },
@@ -326,6 +333,10 @@ export const useTripStore = create<TripState>()(
 
       setElevationHover: (sample) => {
         set({ elevationHover: sample });
+      },
+
+      setStopoverHover: (hover) => {
+        set({ stopoverHover: hover });
       },
     }),
     {
