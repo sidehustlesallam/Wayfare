@@ -19,7 +19,7 @@ export default function App() {
         <TripMap />
         <ElevationProfileDrawer />
         <div className="pointer-events-none absolute bottom-3 left-3 z-[900] rounded bg-white/90 px-2 py-1 text-[10px] text-wayfare-slate/70 shadow-sm backdrop-blur">
-          Powered by OpenStreetMap · OSRM · Nominatim · Open-Meteo · CARTO
+          Powered by OpenStreetMap · OSRM · Photon · Nominatim · Open-Meteo · CARTO
         </div>
       </main>
     </div>

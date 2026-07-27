@@ -10,6 +10,12 @@ export const ELEVATION_SAMPLE_COUNT = 80;
 export const DRIVING_CAP_OPTIONS = [4, 6, 8, 10] as const;
 
 export const NOMINATIM_BASE_URL = 'https://nominatim.openstreetmap.org';
+/** Identifies Wayfare on Nominatim (browsers cannot set User-Agent). */
+export const NOMINATIM_CONTACT_EMAIL =
+  'wayfare-app@users.noreply.github.com';
+/** OSM usage policy: absolute maximum of 1 request per second. */
+export const NOMINATIM_MIN_INTERVAL_MS = 1100;
+export const PHOTON_BASE_URL = 'https://photon.komoot.io';
 export const OSRM_BASE_URL = 'https://router.project-osrm.org';
 export const OPEN_METEO_ELEVATION_URL =
   'https://api.open-meteo.com/v1/elevation';

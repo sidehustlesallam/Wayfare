@@ -141,7 +141,28 @@ describe('OSRMService route aggregation & over-cap midpoints', () => {
         );
       }
 
-      // Nominatim reverse / search used for stopover suggestions
+      if (url.includes('photon.komoot.io')) {
+        return new Response(
+          JSON.stringify({
+            features: [
+              {
+                type: 'Feature',
+                geometry: { type: 'Point', coordinates: [8.5, 50.5] },
+                properties: {
+                  osm_type: 'N',
+                  osm_id: 1,
+                  name: 'Rest Town',
+                  country: 'Germany',
+                  countrycode: 'de',
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      // Nominatim reverse / search fallback
       return new Response(
         JSON.stringify({
           place_id: 1,
@@ -179,8 +200,30 @@ describe('OSRMService route aggregation & over-cap midpoints', () => {
     const geometry = buildLongGeometry().slice(0, 10);
     const encoded = encodePolyline(geometry);
 
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+
+      if (url.includes('photon.komoot.io')) {
+        return new Response(
+          JSON.stringify({
+            features: [
+              {
+                geometry: { coordinates: [2.4, 48.9] },
+                properties: {
+                  osm_type: 'N',
+                  osm_id: 2,
+                  name: 'Near Paris',
+                  country: 'France',
+                  countrycode: 'fr',
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      return new Response(
         JSON.stringify({
           code: 'Ok',
           routes: [
@@ -193,8 +236,8 @@ describe('OSRMService route aggregation & over-cap midpoints', () => {
           ],
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
-    );
+      );
+    });
 
     const service = new OSRMService();
     const result = await service.fetchRoute({
@@ -213,8 +256,30 @@ describe('OSRMService route aggregation & over-cap midpoints', () => {
 
     const geometry = buildLongGeometry().slice(0, 5);
     const encoded = encodePolyline(geometry);
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+
+      if (url.includes('photon.komoot.io')) {
+        return new Response(
+          JSON.stringify({
+            features: [
+              {
+                geometry: { coordinates: [2.35, 48.85] },
+                properties: {
+                  osm_type: 'N',
+                  osm_id: 3,
+                  name: 'Paris',
+                  country: 'France',
+                  countrycode: 'fr',
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+
+      return new Response(
         JSON.stringify({
           code: 'Ok',
           routes: [
@@ -243,8 +308,8 @@ describe('OSRMService route aggregation & over-cap midpoints', () => {
           ],
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
-    );
+      );
+    });
 
     const service = new OSRMService();
     const result = await service.fetchRoute({

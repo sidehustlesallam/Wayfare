@@ -22,7 +22,7 @@ import {
   splitGeometryByLegDistances,
 } from '../../utils/polyline';
 import type { RoutingAdapter } from './RoutingAdapter';
-import { nominatimService } from '../geocoding/NominatimService';
+import { geocodingService } from '../geocoding/NominatimService';
 
 interface OsrmManeuver {
   type: string;
@@ -280,7 +280,8 @@ export class OSRMService implements RoutingAdapter {
   ): Promise<ReturnType<typeof crossingsFromCountrySamples>> {
     if (geometry.length < 2) return [];
 
-    const samples = sampleGeometryForBorders(geometry, 75, 12);
+    // Sparse samples + shared geocode rate limit keep us under OSM's 1 req/sec.
+    const samples = sampleGeometryForBorders(geometry, 120, 6);
     const annotated: Array<{
       point: LatLng;
       country: CountryHint | undefined;
@@ -306,7 +307,7 @@ export class OSRMService implements RoutingAdapter {
     }
 
     try {
-      const reverse = await nominatimService.reverse(lat, lng, signal);
+      const reverse = await geocodingService.reverse(lat, lng, signal);
       const hint = reverse?.countryCode
         ? {
             code: reverse.countryCode,
@@ -327,7 +328,7 @@ export class OSRMService implements RoutingAdapter {
     signal?: AbortSignal,
   ): Promise<string[]> {
     try {
-      const reverse = await nominatimService.reverse(
+      const reverse = await geocodingService.reverse(
         point.lat,
         point.lng,
         signal,
@@ -337,7 +338,7 @@ export class OSRMService implements RoutingAdapter {
       if (reverse?.label) suggestions.add(reverse.label);
 
       if (reverse?.label) {
-        const nearby = await nominatimService.search(reverse.label, signal);
+        const nearby = await geocodingService.search(reverse.label, signal);
         for (const result of nearby.slice(0, 3)) {
           suggestions.add(result.label);
         }

@@ -113,6 +113,21 @@ export default defineConfig({
               },
             },
           },
+          {
+            urlPattern: /^https:\/\/photon\.komoot\.io\/.*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'photon-geocode',
+              networkTimeoutSeconds: 8,
+              expiration: {
+                maxEntries: 60,
+                maxAgeSeconds: 60 * 60 * 24 * 7,
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
         ],
       },
       devOptions: {

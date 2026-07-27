@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { GEOCODING_DEBOUNCE_MS } from '../config/defaults';
 import type { GeocodingAdapter } from '../services/geocoding/GeocodingAdapter';
-import { nominatimService } from '../services/geocoding/NominatimService';
+import { geocodingService } from '../services/geocoding/NominatimService';
 import type { GeocodingResult } from '../types';
 
 interface UseGeocodingOptions {
@@ -19,7 +19,7 @@ interface UseGeocodingResult {
 }
 
 /**
- * Debounced geocoding hook. Never calls Nominatim directly from components
+ * Debounced geocoding hook. Never calls providers directly from components
  * beyond this hook + the GeocodingAdapter.
  */
 export function useGeocoding(
@@ -27,7 +27,7 @@ export function useGeocoding(
 ): UseGeocodingResult {
   const {
     debounceMs = GEOCODING_DEBOUNCE_MS,
-    adapter = nominatimService,
+    adapter = geocodingService,
   } = options;
 
   const [query, setQuery] = useState('');
@@ -61,7 +61,11 @@ export function useGeocoding(
       } catch (err) {
         if (controller.signal.aborted) return;
         const message =
-          err instanceof Error ? err.message : 'Geocoding request failed';
+          err instanceof TypeError
+            ? 'Network error — check your connection and try again'
+            : err instanceof Error
+              ? err.message
+              : 'Geocoding request failed';
         setError(message);
         setResults([]);
       } finally {

@@ -141,7 +141,7 @@ Use the browser install prompt (or “Add to Home Screen”) on HTTPS / GitHub P
 
 ## Attribution
 
-Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors. Tiles © [CARTO](https://carto.com/attributions). Routing via [OSRM](http://project-osrm.org/); geocoding via [Nominatim](https://nominatim.org/); elevation via [Open-Meteo](https://open-meteo.com/). Please respect public API usage policies.
+Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors. Tiles © [CARTO](https://carto.com/attributions). Routing via [OSRM](http://project-osrm.org/); geocoding via [Photon](https://photon.komoot.io/) / [Nominatim](https://nominatim.org/); elevation via [Open-Meteo](https://open-meteo.com/). Please respect public API usage policies.
 
 ## License
 

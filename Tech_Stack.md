@@ -15,7 +15,7 @@
   `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png`
 - **Alternate Tiles:** OpenStreetMap Standard (when `customMapTiles` is enabled)
 - **Routing:** OSRM Public API (`router.project-osrm.org`) — `steps=true`, scenic uses `exclude=motorway`
-- **Geocoding:** Nominatim (`nominatim.openstreetmap.org`) — debounced ≥300ms
+- **Geocoding:** Photon (Komoot) primary + Nominatim fallback — debounced ≥300ms; Nominatim gated ≤1 req/sec
 - **Elevation:** Open-Meteo Elevation API (`api.open-meteo.com/v1/elevation`)
 
 Resolved via `src/config/mapTiles.ts` → `getMapTileConfig()`.
