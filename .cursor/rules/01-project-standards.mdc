@@ -1,0 +1,25 @@
+---
+description: Architecture, coding rules, and design patterns for Wayfare road trip planner
+globs: src/**/*.ts, src/**/*.tsx
+alwaysApply: true
+---
+
+# Project Coding Rules & Architectural Guidelines
+
+## 1. Modular Architecture & Plugin Design
+- **Feature Flags First:** Always check `src/config/features.ts` for feature flags before initializing complex modules. Premium or experimental features (e.g., GPX exports, AI itinerary suggestions, alternate map tiles) must be toggleable.
+- **Service Abstraction:** Never call mapping/routing APIs (OSRM, Nominatim) directly inside React components. Use the service adapters in `src/services/`. UI components must only depend on generic interfaces (`RoutingAdapter`, `GeocodingAdapter`).
+
+## 2. TypeScript & Type Safety Rules
+- **No `any`:** Strict mode is enabled. Use explicit interfaces from `src/types/`.
+- **Discriminant Unions:** Use clear union types for routing segments, waypoint stop types (`'must-visit' | 'overnight'`), and border warning types.
+- **Immutability:** Treat state in Zustand as immutable; always return clean updated objects or arrays using spread operators.
+
+## 3. Performance & Map Optimization Rules
+- **Component Memoization:** Map layers (Polylines, Markers, Popups) can cause heavy re-renders. Wrap Leaflet child components in `React.memo` or use `useMemo` for route geometries.
+- **Debounced Geocoding:** Ensure all Nominatim search inputs use a debounced hook (minimum 300ms) to respect public OSM rate limits.
+- **Client-Side Heavy Processing:** Calculations for midpoints, daily driving cap thresholds, and fuel cost estimations must remain fast, pure client-side functions in `src/utils/`.
+
+## 4. GitHub Pages Static Compatibility
+- **Zero Backend Reliance:** All routing, geocoding, state persistence, and URL sharing logic must function entirely client-side.
+- **Relative Path Routing:** Ensure Vite is configured with `base: './'` or your repo path so assets resolve correctly on GitHub Pages static hosting.

@@ -1,0 +1,32 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Source+Sans+3:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    font-family: 'Source Sans 3', system-ui, sans-serif;
+    color: #1a2332;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Leaflet default marker icon fix for bundlers */
+.leaflet-container {
+  font-family: inherit;
+  background: #dfe8f0;
+}
+
+.wayfare-marker,
+.wayfare-border-badge {
+  background: transparent;
+  border: none;
+}
