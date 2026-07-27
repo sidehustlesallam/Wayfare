@@ -14,9 +14,9 @@ export interface FeatureFlags {
 }
 
 export const features: FeatureFlags = {
-  gpxExport: false,
+  gpxExport: true,
   aiItinerary: false,
-  scenicRouting: false,
+  scenicRouting: true,
   customMapTiles: false,
 };
 

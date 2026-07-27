@@ -2,6 +2,14 @@ import { Landmark } from 'lucide-react';
 import { useBorderDetection } from '../../hooks/useBorderDetection';
 import { Card } from '../common/Card';
 
+const KIND_LABELS: Record<string, string> = {
+  vignette: 'Vignette',
+  passport: 'Passport',
+  'driving-side': 'Driving side',
+  currency: 'Currency',
+  general: 'Border',
+};
+
 export function BorderAlerts() {
   const crossings = useBorderDetection();
 
@@ -33,10 +41,22 @@ export function BorderAlerts() {
 
       {crossings.map((crossing) => (
         <Card
-          key={`${crossing.fromCountry}-${crossing.toCountry}`}
+          key={`${crossing.fromCountryCode ?? crossing.fromCountry}-${crossing.toCountryCode ?? crossing.toCountry}`}
           tone="danger"
           title={`🛂 ${crossing.fromCountry} → ${crossing.toCountry}`}
         >
+          {crossing.warningKinds && crossing.warningKinds.length > 0 ? (
+            <div className="mb-2 flex flex-wrap gap-1">
+              {[...new Set(crossing.warningKinds)].map((kind) => (
+                <span
+                  key={kind}
+                  className="rounded bg-wayfare-danger/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-wayfare-danger"
+                >
+                  {KIND_LABELS[kind] ?? kind}
+                </span>
+              ))}
+            </div>
+          ) : null}
           <ul className="space-y-1">
             {crossing.warnings.map((warning) => (
               <li key={warning} className="text-xs text-wayfare-slate">

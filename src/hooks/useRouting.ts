@@ -10,14 +10,14 @@ interface UseRoutingOptions {
 }
 
 /**
- * Watches waypoints + driving cap and refreshes the route via RoutingAdapter.
- * Fuel slider changes recalculate cost in the store without re-fetching.
+ * Watches waypoints + driving cap + route profile and refreshes via RoutingAdapter.
  */
 export function useRouting(options: UseRoutingOptions = {}): void {
   const { adapter = osrmService, enabled = true } = options;
 
   const waypoints = useTripStore((s) => s.waypoints);
   const drivingCapHours = useTripStore((s) => s.settings.drivingCapHours);
+  const routeProfile = useTripStore((s) => s.settings.routeProfile);
   const settings = useTripStore((s) => s.settings);
   const setRouteResult = useTripStore((s) => s.setRouteResult);
   const setRoutingStatus = useTripStore((s) => s.setRoutingStatus);
@@ -40,7 +40,7 @@ export function useRouting(options: UseRoutingOptions = {}): void {
       setRoutingStatus(true, null);
       try {
         const result = await adapter.fetchRoute(
-          { waypoints, drivingCapHours },
+          { waypoints, drivingCapHours, routeProfile },
           controller.signal,
         );
 
@@ -54,7 +54,12 @@ export function useRouting(options: UseRoutingOptions = {}): void {
           current.fuelType,
         );
 
-        setRouteResult(result.segments, result.fullGeometry, metrics);
+        setRouteResult(
+          result.segments,
+          result.fullGeometry,
+          metrics,
+          result.steps,
+        );
       } catch (err) {
         if (controller.signal.aborted) return;
         const message =
@@ -71,6 +76,7 @@ export function useRouting(options: UseRoutingOptions = {}): void {
   }, [
     waypoints,
     drivingCapHours,
+    routeProfile,
     adapter,
     enabled,
     setRouteResult,

@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { Marker, Popup } from 'react-leaflet';
+import { Marker, Popup, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import type { BorderCrossing } from '../../types';
 
@@ -30,6 +30,9 @@ function BorderBadgesComponent({ crossings }: BorderBadgesProps) {
           position={crossing.coordinates}
           icon={borderIcon}
         >
+          <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
+            🛂 {crossing.fromCountry} → {crossing.toCountry}
+          </Tooltip>
           <Popup>
             <strong>
               {crossing.fromCountry} → {crossing.toCountry}

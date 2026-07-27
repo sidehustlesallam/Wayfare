@@ -30,3 +30,39 @@
   background: transparent;
   border: none;
 }
+
+@media print {
+  @page {
+    margin: 16mm;
+  }
+
+  body {
+    background: #fff !important;
+    color: #1a2332;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  #wayfare-print-itinerary,
+  #wayfare-print-roadbook,
+  #wayfare-print-itinerary *,
+  #wayfare-print-roadbook * {
+    visibility: visible !important;
+  }
+
+  #wayfare-print-itinerary,
+  #wayfare-print-roadbook {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #fff !important;
+  }
+}
+

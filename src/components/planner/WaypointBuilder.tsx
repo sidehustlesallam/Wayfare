@@ -1,21 +1,10 @@
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { Route } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowLeftRight, Route, Trash2 } from 'lucide-react';
 import { useTripStore } from '../../store/useTripStore';
 import type { GeocodingResult, StopType } from '../../types';
-import { WaypointItem } from './WaypointItem';
+import { Button } from '../common/Button';
+import { Modal } from '../common/Modal';
+import { WaypointList } from './WaypointList';
 import { WaypointSearch } from './WaypointSearch';
 
 export function WaypointBuilder() {
@@ -23,14 +12,11 @@ export function WaypointBuilder() {
   const addWaypoint = useTripStore((s) => s.addWaypoint);
   const removeWaypoint = useTripStore((s) => s.removeWaypoint);
   const reorderWaypoints = useTripStore((s) => s.reorderWaypoints);
+  const reverseWaypoints = useTripStore((s) => s.reverseWaypoints);
+  const clearAllWaypoints = useTripStore((s) => s.clearAllWaypoints);
   const setStopType = useTripStore((s) => s.setStopType);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  );
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
 
   const handleSelect = (result: GeocodingResult) => {
     addWaypoint({
@@ -38,18 +24,9 @@ export function WaypointBuilder() {
       lat: result.lat,
       lng: result.lng,
       stopType: 'must-visit',
+      countryCode: result.countryCode,
+      countryName: result.countryName,
     });
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const fromIndex = waypoints.findIndex((wp) => wp.id === active.id);
-    const toIndex = waypoints.findIndex((wp) => wp.id === over.id);
-    if (fromIndex === -1 || toIndex === -1) return;
-
-    reorderWaypoints(fromIndex, toIndex);
   };
 
   const handleStopTypeChange = (id: string, stopType: StopType) => {
@@ -58,11 +35,36 @@ export function WaypointBuilder() {
 
   return (
     <section className="space-y-3">
-      <header className="flex items-center gap-2">
-        <Route className="h-4 w-4 text-wayfare-sky" />
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-wayfare-slate">
-          Waypoints
-        </h2>
+      <header className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Route className="h-4 w-4 text-wayfare-sky" />
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-wayfare-slate">
+            Waypoints
+          </h2>
+        </div>
+        {waypoints.length > 0 ? (
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              className="!px-2 !py-1 text-xs"
+              disabled={waypoints.length < 2}
+              onClick={() => reverseWaypoints()}
+              aria-label="Reverse route"
+            >
+              <ArrowLeftRight className="h-3.5 w-3.5" />
+              Reverse
+            </Button>
+            <Button
+              variant="danger"
+              className="!px-2 !py-1 text-xs"
+              onClick={() => setConfirmClearOpen(true)}
+              aria-label="Clear all waypoints"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Clear All
+            </Button>
+          </div>
+        ) : null}
       </header>
 
       <WaypointSearch onSelect={handleSelect} />
@@ -72,29 +74,41 @@ export function WaypointBuilder() {
           Add a start city to begin your route.
         </p>
       ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={waypoints.map((wp) => wp.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            <ul className="space-y-2">
-              {waypoints.map((waypoint, index) => (
-                <WaypointItem
-                  key={waypoint.id}
-                  waypoint={waypoint}
-                  index={index}
-                  onRemove={removeWaypoint}
-                  onStopTypeChange={handleStopTypeChange}
-                />
-              ))}
-            </ul>
-          </SortableContext>
-        </DndContext>
+        <WaypointList
+          waypoints={waypoints}
+          onRemove={removeWaypoint}
+          onStopTypeChange={handleStopTypeChange}
+          onReorder={reorderWaypoints}
+        />
       )}
+
+      <Modal
+        open={confirmClearOpen}
+        onClose={() => setConfirmClearOpen(false)}
+        title="Clear all waypoints?"
+      >
+        <p className="mb-4 text-sm text-wayfare-slate">
+          This removes every stop, the active route, and fuel totals from your
+          current session. This cannot be undone.
+        </p>
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => setConfirmClearOpen(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              clearAllWaypoints();
+              setConfirmClearOpen(false);
+            }}
+          >
+            Clear All
+          </Button>
+        </div>
+      </Modal>
     </section>
   );
 }

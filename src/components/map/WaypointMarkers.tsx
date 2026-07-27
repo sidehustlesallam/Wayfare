@@ -1,13 +1,19 @@
 import { memo, useMemo } from 'react';
-import { Marker, Popup } from 'react-leaflet';
+import { Marker, Popup, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import type { Waypoint } from '../../types';
+import { formatDuration } from '../../utils/fuel';
 
 interface WaypointMarkersProps {
   waypoints: Waypoint[];
+  /** Cumulative drive minutes to each waypoint (same order as waypoints). */
+  driveMinutesToStop: number[];
 }
 
-function createNumberedIcon(index: number, stopType: Waypoint['stopType']): L.DivIcon {
+function createNumberedIcon(
+  index: number,
+  stopType: Waypoint['stopType'],
+): L.DivIcon {
   const isOvernight = stopType === 'overnight';
   const bg = isOvernight ? '#1e4d3a' : '#3d7ea6';
 
@@ -30,7 +36,10 @@ function createNumberedIcon(index: number, stopType: Waypoint['stopType']): L.Di
   });
 }
 
-function WaypointMarkersComponent({ waypoints }: WaypointMarkersProps) {
+function WaypointMarkersComponent({
+  waypoints,
+  driveMinutesToStop,
+}: WaypointMarkersProps) {
   const icons = useMemo(
     () =>
       waypoints.map((wp, index) => createNumberedIcon(index, wp.stopType)),
@@ -39,19 +48,35 @@ function WaypointMarkersComponent({ waypoints }: WaypointMarkersProps) {
 
   return (
     <>
-      {waypoints.map((waypoint, index) => (
-        <Marker
-          key={waypoint.id}
-          position={[waypoint.lat, waypoint.lng]}
-          icon={icons[index]}
-        >
-          <Popup>
-            <strong>{waypoint.label}</strong>
-            <br />
-            <span className="capitalize">{waypoint.stopType.replace('-', ' ')}</span>
-          </Popup>
-        </Marker>
-      ))}
+      {waypoints.map((waypoint, index) => {
+        const driveLabel =
+          index === 0
+            ? 'Start'
+            : `Drive so far: ${formatDuration(driveMinutesToStop[index] ?? 0)}`;
+
+        return (
+          <Marker
+            key={waypoint.id}
+            position={[waypoint.lat, waypoint.lng]}
+            icon={icons[index]}
+          >
+            <Tooltip direction="top" offset={[0, -28]} opacity={0.95}>
+              <span className="font-semibold">{waypoint.label}</span>
+              <br />
+              <span>{driveLabel}</span>
+            </Tooltip>
+            <Popup>
+              <strong>{waypoint.label}</strong>
+              <br />
+              <span className="capitalize">
+                {waypoint.stopType.replace('-', ' ')}
+              </span>
+              <br />
+              <span>{driveLabel}</span>
+            </Popup>
+          </Marker>
+        );
+      })}
     </>
   );
 }

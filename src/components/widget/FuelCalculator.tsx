@@ -1,9 +1,19 @@
 import { Fuel } from 'lucide-react';
 import { useTripStore } from '../../store/useTripStore';
-import type { FuelType } from '../../types';
-import { formatDistance, formatDuration } from '../../utils/fuel';
+import type { FuelType, UnitSystem } from '../../types';
+import {
+  formatDistance,
+  formatDuration,
+  formatFuelAmount,
+  formatFuelCost,
+  lPer100ToMpg,
+  mpgToLPer100,
+  pricePerGallonToPerLitre,
+  pricePerLitreToPerGallon,
+} from '../../utils/fuel';
 import { Card } from '../common/Card';
 import { Dropdown } from '../common/Dropdown';
+import { Button } from '../common/Button';
 
 const FUEL_OPTIONS: Array<{ value: FuelType; label: string }> = [
   { value: 'gasoline', label: 'Gasoline' },
@@ -17,19 +27,91 @@ export function FuelCalculator() {
   const setVehicleEfficiency = useTripStore((s) => s.setVehicleEfficiency);
   const setFuelPricePerLitre = useTripStore((s) => s.setFuelPricePerLitre);
   const setFuelType = useTripStore((s) => s.setFuelType);
+  const setUnitSystem = useTripStore((s) => s.setUnitSystem);
 
   const isEv = settings.fuelType === 'ev';
-  const efficiencyLabel = isEv ? 'Consumption (kWh/100km)' : 'Efficiency (L/100km)';
-  const priceLabel = isEv ? 'Price per kWh (€)' : 'Price per litre (€)';
-  const fuelUnit = isEv ? 'kWh' : 'L';
+  const isImperial = settings.unitSystem === 'imperial';
+
+  const displayEfficiency = isEv
+    ? settings.vehicleEfficiency
+    : isImperial
+      ? lPer100ToMpg(settings.vehicleEfficiency)
+      : settings.vehicleEfficiency;
+
+  const displayPrice = isEv
+    ? settings.fuelPricePerLitre
+    : isImperial
+      ? pricePerLitreToPerGallon(settings.fuelPricePerLitre)
+      : settings.fuelPricePerLitre;
+
+  const efficiencyLabel = isEv
+    ? 'Consumption (kWh/100km)'
+    : isImperial
+      ? 'Efficiency (MPG)'
+      : 'Efficiency (L/100km)';
+
+  const priceLabel = isEv
+    ? isImperial
+      ? 'Price per kWh ($)'
+      : 'Price per kWh (€)'
+    : isImperial
+      ? 'Price per gallon ($)'
+      : 'Price per litre (€)';
+
+  const efficiencyMin = isEv ? 10 : isImperial ? 10 : 3;
+  const efficiencyMax = isEv ? 40 : isImperial ? 60 : 20;
+  const priceMin = isEv ? 0.1 : isImperial ? 2 : 0.5;
+  const priceMax = isEv ? 1.5 : isImperial ? 8 : 3;
+
+  const handleEfficiencyChange = (raw: number) => {
+    if (isEv || !isImperial) {
+      setVehicleEfficiency(raw);
+      return;
+    }
+    setVehicleEfficiency(mpgToLPer100(raw));
+  };
+
+  const handlePriceChange = (raw: number) => {
+    if (isEv || !isImperial) {
+      setFuelPricePerLitre(raw);
+      return;
+    }
+    setFuelPricePerLitre(pricePerGallonToPerLitre(raw));
+  };
+
+  const setUnits = (unitSystem: UnitSystem) => {
+    setUnitSystem(unitSystem);
+  };
 
   return (
     <section className="space-y-3">
-      <header className="flex items-center gap-2">
-        <Fuel className="h-4 w-4 text-wayfare-sky" />
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-wayfare-slate">
-          Fuel & cost
-        </h2>
+      <header className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Fuel className="h-4 w-4 text-wayfare-sky" />
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-wayfare-slate">
+            Fuel & cost
+          </h2>
+        </div>
+        <div className="flex rounded-md border border-wayfare-mist p-0.5 text-[11px]">
+          <Button
+            variant="ghost"
+            className={`!rounded !px-2 !py-1 ${
+              !isImperial ? 'bg-wayfare-sky/15 text-wayfare-sky' : ''
+            }`}
+            onClick={() => setUnits('metric')}
+          >
+            Metric
+          </Button>
+          <Button
+            variant="ghost"
+            className={`!rounded !px-2 !py-1 ${
+              isImperial ? 'bg-wayfare-sky/15 text-wayfare-sky' : ''
+            }`}
+            onClick={() => setUnits('imperial')}
+          >
+            Imperial
+          </Button>
+        </div>
       </header>
 
       <Card>
@@ -41,26 +123,24 @@ export function FuelCalculator() {
               label: opt.label,
             }))}
             value={settings.fuelType}
-            onChange={(event) =>
-              setFuelType(event.target.value as FuelType)
-            }
+            onChange={(event) => setFuelType(event.target.value as FuelType)}
           />
 
           <label className="block text-sm">
             <span className="mb-1.5 flex justify-between font-medium text-wayfare-slate">
               <span>{efficiencyLabel}</span>
               <span className="tabular-nums text-wayfare-ink">
-                {settings.vehicleEfficiency.toFixed(1)}
+                {displayEfficiency.toFixed(1)}
               </span>
             </span>
             <input
               type="range"
-              min={isEv ? 10 : 3}
-              max={isEv ? 40 : 20}
+              min={efficiencyMin}
+              max={efficiencyMax}
               step={0.1}
-              value={settings.vehicleEfficiency}
+              value={Number(displayEfficiency.toFixed(1))}
               onChange={(event) =>
-                setVehicleEfficiency(Number.parseFloat(event.target.value))
+                handleEfficiencyChange(Number.parseFloat(event.target.value))
               }
               className="w-full accent-wayfare-sky"
             />
@@ -70,17 +150,18 @@ export function FuelCalculator() {
             <span className="mb-1.5 flex justify-between font-medium text-wayfare-slate">
               <span>{priceLabel}</span>
               <span className="tabular-nums text-wayfare-ink">
-                €{settings.fuelPricePerLitre.toFixed(2)}
+                {isImperial ? '$' : '€'}
+                {displayPrice.toFixed(2)}
               </span>
             </span>
             <input
               type="range"
-              min={0.5}
-              max={isEv ? 1.5 : 3}
+              min={priceMin}
+              max={priceMax}
               step={0.01}
-              value={settings.fuelPricePerLitre}
+              value={Number(displayPrice.toFixed(2))}
               onChange={(event) =>
-                setFuelPricePerLitre(Number.parseFloat(event.target.value))
+                handlePriceChange(Number.parseFloat(event.target.value))
               }
               className="w-full accent-wayfare-sky"
             />
@@ -90,7 +171,7 @@ export function FuelCalculator() {
             <div>
               <dt className="text-wayfare-slate/60">Distance</dt>
               <dd className="text-sm font-semibold text-wayfare-ink">
-                {formatDistance(metrics.totalDistanceKm)}
+                {formatDistance(metrics.totalDistanceKm, settings.unitSystem)}
               </dd>
             </div>
             <div>
@@ -100,15 +181,24 @@ export function FuelCalculator() {
               </dd>
             </div>
             <div>
-              <dt className="text-wayfare-slate/60">Fuel needed</dt>
+              <dt className="text-wayfare-slate/60">
+                {isEv ? 'Energy needed' : 'Fuel needed'}
+              </dt>
               <dd className="text-sm font-semibold text-wayfare-ink">
-                {metrics.estimatedFuelLitres.toFixed(1)} {fuelUnit}
+                {formatFuelAmount(
+                  metrics.estimatedFuelLitres,
+                  settings.unitSystem,
+                  settings.fuelType,
+                )}
               </dd>
             </div>
             <div>
               <dt className="text-wayfare-slate/60">Est. cost</dt>
               <dd className="text-sm font-semibold text-wayfare-sky">
-                €{metrics.estimatedFuelCost.toFixed(2)}
+                {formatFuelCost(
+                  metrics.estimatedFuelCost,
+                  settings.unitSystem,
+                )}
               </dd>
             </div>
           </dl>

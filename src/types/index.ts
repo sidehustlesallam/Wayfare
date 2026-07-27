@@ -2,6 +2,10 @@ export type StopType = 'must-visit' | 'overnight';
 
 export type FuelType = 'gasoline' | 'diesel' | 'ev';
 
+export type UnitSystem = 'metric' | 'imperial';
+
+export type RouteProfile = 'fastest' | 'scenic';
+
 export type BorderWarningKind =
   | 'vignette'
   | 'passport'
@@ -16,6 +20,8 @@ export interface Waypoint {
   lng: number;
   stopType: StopType;
   customDurationHours?: number;
+  countryCode?: string;
+  countryName?: string;
 }
 
 export interface LatLng {
@@ -26,6 +32,8 @@ export interface LatLng {
 export interface BorderCrossing {
   fromCountry: string;
   toCountry: string;
+  fromCountryCode?: string;
+  toCountryCode?: string;
   coordinates: [number, number];
   warnings: string[];
   warningKinds?: BorderWarningKind[];
@@ -47,11 +55,26 @@ export interface RouteSegment {
   borderCrossings: BorderCrossing[];
 }
 
+export interface ManeuverStep {
+  index: number;
+  instruction: string;
+  streetName: string;
+  distanceMeters: number;
+  durationSeconds: number;
+  type: string;
+  modifier?: string;
+  location: LatLng;
+}
+
 export interface TripSettings {
   drivingCapHours: number;
+  /** Always stored as L/100km (or kWh/100km for EV). */
   vehicleEfficiency: number;
+  /** Always stored as price per litre (or per kWh for EV). */
   fuelPricePerLitre: number;
   fuelType: FuelType;
+  unitSystem: UnitSystem;
+  routeProfile: RouteProfile;
 }
 
 export interface RouteMetrics {
@@ -75,10 +98,28 @@ export interface GeocodingResult {
 export interface RouteRequest {
   waypoints: Waypoint[];
   drivingCapHours: number;
+  routeProfile: RouteProfile;
 }
 
 export interface RouteResult {
   segments: RouteSegment[];
   metrics: RouteMetrics;
   fullGeometry: LatLng[];
+  steps: ManeuverStep[];
+}
+
+export interface ElevationSample {
+  lat: number;
+  lng: number;
+  elevationMeters: number;
+  /** Distance along the route from the start, in kilometres */
+  distanceKm: number;
+}
+
+export interface ElevationProfile {
+  samples: ElevationSample[];
+  minElevationMeters: number;
+  maxElevationMeters: number;
+  hasHighAltitude: boolean;
+  highAltitudeThresholdMeters: number;
 }

@@ -1,12 +1,13 @@
 import { useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { OSM_ATTRIBUTION, OSM_TILE_URL } from '../../config/defaults';
-import { isFeatureEnabled } from '../../config/features';
+import { getMapTileConfig } from '../../config/mapTiles';
 import { useBorderDetection } from '../../hooks/useBorderDetection';
 import { useTripStore } from '../../store/useTripStore';
+import { cumulativeDriveMinutes } from '../../utils/itinerary';
 import { BorderBadges } from './BorderBadges';
 import { CapMidpointMarkers } from './CapMidpointMarkers';
+import { ElevationHoverMarker } from './ElevationHoverMarker';
 import { RoutePolylines } from './RoutePolylines';
 import { WaypointMarkers } from './WaypointMarkers';
 
@@ -45,15 +46,14 @@ export function TripMap() {
   const waypoints = useTripStore((s) => s.waypoints);
   const segments = useTripStore((s) => s.segments);
   const fullGeometry = useTripStore((s) => s.fullGeometry);
+  const elevationHover = useTripStore((s) => s.elevationHover);
   const crossings = useBorderDetection();
+  const tiles = useMemo(() => getMapTileConfig(), []);
 
-  const tileUrl = useMemo(() => {
-    // customMapTiles gated for future providers
-    if (isFeatureEnabled('customMapTiles')) {
-      return OSM_TILE_URL;
-    }
-    return OSM_TILE_URL;
-  }, []);
+  const driveMinutesToStop = useMemo(
+    () => cumulativeDriveMinutes(waypoints, segments),
+    [waypoints, segments],
+  );
 
   return (
     <MapContainer
@@ -62,12 +62,16 @@ export function TripMap() {
       className="h-full w-full"
       zoomControl={false}
     >
-      <TileLayer attribution={OSM_ATTRIBUTION} url={tileUrl} />
+      <TileLayer attribution={tiles.attribution} url={tiles.url} />
       <FitBounds />
       <RoutePolylines segments={segments} fullGeometry={fullGeometry} />
       <CapMidpointMarkers segments={segments} />
-      <WaypointMarkers waypoints={waypoints} />
+      <WaypointMarkers
+        waypoints={waypoints}
+        driveMinutesToStop={driveMinutesToStop}
+      />
       <BorderBadges crossings={crossings} />
+      <ElevationHoverMarker sample={elevationHover} />
     </MapContainer>
   );
 }

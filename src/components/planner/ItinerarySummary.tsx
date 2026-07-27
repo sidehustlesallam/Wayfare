@@ -3,6 +3,7 @@ import { formatDistance, formatDuration } from '../../utils/fuel';
 
 export function ItinerarySummary() {
   const metrics = useTripStore((s) => s.metrics);
+  const unitSystem = useTripStore((s) => s.settings.unitSystem);
   const isRouting = useTripStore((s) => s.isRouting);
   const routingError = useTripStore((s) => s.routingError);
   const waypointCount = useTripStore((s) => s.waypoints.length);
@@ -23,7 +24,7 @@ export function ItinerarySummary() {
           <div>
             <dt className="text-wayfare-slate/60">Total</dt>
             <dd className="font-semibold text-wayfare-ink">
-              {formatDistance(metrics.totalDistanceKm)}
+              {formatDistance(metrics.totalDistanceKm, unitSystem)}
             </dd>
           </div>
           <div>

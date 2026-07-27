@@ -1,24 +1,49 @@
 import { OSRM_BASE_URL } from '../../config/defaults';
 import type {
   LatLng,
+  ManeuverStep,
+  RouteProfile,
   RouteRequest,
   RouteResult,
   RouteSegment,
   Waypoint,
 } from '../../types';
+import {
+  buildBorderCrossing,
+  estimateBorderCoordinates,
+  type CountryHint,
+} from '../../utils/borders';
+import { countryDisplayName } from '../../utils/borderRules';
 import { aggregateRouteMetrics } from '../../utils/fuel';
 import { coordinateAtDistance, decodePolyline } from '../../utils/polyline';
 import type { RoutingAdapter } from './RoutingAdapter';
 import { nominatimService } from '../geocoding/NominatimService';
 
+interface OsrmManeuver {
+  type: string;
+  modifier?: string;
+  location: [number, number];
+}
+
+interface OsrmStep {
+  distance: number;
+  duration: number;
+  name: string;
+  mode?: string;
+  maneuver: OsrmManeuver;
+}
+
+interface OsrmLeg {
+  distance: number;
+  duration: number;
+  steps?: OsrmStep[];
+}
+
 interface OsrmRoute {
   distance: number;
   duration: number;
   geometry: string;
-  legs: Array<{
-    distance: number;
-    duration: number;
-  }>;
+  legs: OsrmLeg[];
 }
 
 interface OsrmResponse {
@@ -27,10 +52,48 @@ interface OsrmResponse {
   message?: string;
 }
 
+function buildInstruction(step: OsrmStep): string {
+  const { type, modifier } = step.maneuver;
+  const street = step.name?.trim();
+  const mod = modifier ? ` ${modifier}` : '';
+
+  switch (type) {
+    case 'depart':
+      return street ? `Depart onto ${street}` : 'Depart';
+    case 'arrive':
+      return street ? `Arrive at ${street}` : 'Arrive at destination';
+    case 'turn':
+      return street ? `Turn${mod} onto ${street}` : `Turn${mod}`;
+    case 'merge':
+      return street ? `Merge${mod} onto ${street}` : `Merge${mod}`;
+    case 'on ramp':
+    case 'off ramp':
+      return street
+        ? `Take the ramp${mod} toward ${street}`
+        : `Take the ramp${mod}`;
+    case 'fork':
+      return street ? `Keep${mod} at the fork onto ${street}` : `Keep${mod} at the fork`;
+    case 'roundabout':
+    case 'rotary':
+      return street
+        ? `Enter the roundabout and continue onto ${street}`
+        : 'Enter the roundabout';
+    case 'continue':
+      return street ? `Continue onto ${street}` : 'Continue straight';
+    case 'new name':
+      return street ? `Continue on ${street}` : 'Continue';
+    case 'end of road':
+      return street ? `At the end of the road, turn${mod} onto ${street}` : `Turn${mod} at the end of the road`;
+    default:
+      return street
+        ? `${type.replace(/_/g, ' ')}${mod} onto ${street}`
+        : `${type.replace(/_/g, ' ')}${mod}`.trim();
+  }
+}
+
 /**
  * Zero-key OSRM routing adapter.
- * Computes multi-stop routes, decodes polylines, detects over-cap segments,
- * and suggests nearby towns at the driving-cap midpoint.
+ * Supports fastest vs scenic (exclude motorway) profiles and turn steps.
  */
 export class OSRMService implements RoutingAdapter {
   private readonly baseUrl: string;
@@ -43,12 +106,13 @@ export class OSRMService implements RoutingAdapter {
     request: RouteRequest,
     signal?: AbortSignal,
   ): Promise<RouteResult> {
-    const { waypoints, drivingCapHours } = request;
+    const { waypoints, drivingCapHours, routeProfile } = request;
 
     if (waypoints.length < 2) {
       return {
         segments: [],
         fullGeometry: [],
+        steps: [],
         metrics: {
           totalDistanceKm: 0,
           totalDurationMinutes: 0,
@@ -59,13 +123,19 @@ export class OSRMService implements RoutingAdapter {
       };
     }
 
-    const coords = waypoints
-      .map((wp) => `${wp.lng},${wp.lat}`)
-      .join(';');
+    const coords = waypoints.map((wp) => `${wp.lng},${wp.lat}`).join(';');
+    const params = new URLSearchParams({
+      overview: 'full',
+      geometries: 'polyline',
+      steps: 'true',
+    });
 
-    const url =
-      `${this.baseUrl}/route/v1/driving/${coords}` +
-      '?overview=full&geometries=polyline&steps=false';
+    if (routeProfile === 'scenic') {
+      // Prefer secondary / trunk roads by excluding motorways
+      params.set('exclude', 'motorway');
+    }
+
+    const url = `${this.baseUrl}/route/v1/driving/${coords}?${params}`;
 
     const response = await fetch(url, {
       signal,
@@ -84,6 +154,7 @@ export class OSRMService implements RoutingAdapter {
 
     const route = data.routes[0];
     const fullGeometry = decodePolyline(route.geometry);
+    const steps = flattenSteps(route.legs);
     const segments = await this.buildSegments(
       waypoints,
       route,
@@ -92,13 +163,11 @@ export class OSRMService implements RoutingAdapter {
       signal,
     );
 
-    // Fuel inputs are applied by the store / hook after aggregation
     const metrics = aggregateRouteMetrics(segments, 0, 0, 'gasoline');
 
-    return { segments, fullGeometry, metrics };
+    return { segments, fullGeometry, metrics, steps };
   }
 
-  /** Preferred alias used by live store wiring (`useRouting`). */
   fetchRoute(
     request: RouteRequest,
     signal?: AbortSignal,
@@ -117,6 +186,10 @@ export class OSRMService implements RoutingAdapter {
     const segments: RouteSegment[] = [];
     let geometryCursor = 0;
 
+    const countries = await Promise.all(
+      waypoints.map((wp) => this.resolveCountry(wp, signal)),
+    );
+
     for (let i = 0; i < waypoints.length - 1; i++) {
       const from = waypoints[i];
       const to = waypoints[i + 1];
@@ -128,7 +201,6 @@ export class OSRMService implements RoutingAdapter {
       const durationMinutes = leg.duration / 60;
       const exceedsCap = durationMinutes > capMinutes;
 
-      // Approximate leg geometry by slicing the full path by haversine progress
       const legGeometry = sliceGeometryForLeg(
         fullGeometry,
         geometryCursor,
@@ -154,6 +226,18 @@ export class OSRMService implements RoutingAdapter {
         }
       }
 
+      const borderCrossings = [];
+      const fromCountry = countries[i];
+      const toCountry = countries[i + 1];
+      if (fromCountry && toCountry) {
+        const crossing = buildBorderCrossing(
+          fromCountry,
+          toCountry,
+          estimateBorderCoordinates(legGeometry, distanceKm),
+        );
+        if (crossing) borderCrossings.push(crossing);
+      }
+
       segments.push({
         fromWaypointId: from.id,
         toWaypointId: to.id,
@@ -164,11 +248,40 @@ export class OSRMService implements RoutingAdapter {
         exceedsCap,
         midpointCoords,
         suggestedStopovers,
-        borderCrossings: [],
+        borderCrossings,
       });
     }
 
     return segments;
+  }
+
+  private async resolveCountry(
+    waypoint: Waypoint,
+    signal?: AbortSignal,
+  ): Promise<CountryHint | undefined> {
+    if (waypoint.countryCode) {
+      return {
+        code: waypoint.countryCode.toUpperCase(),
+        name:
+          waypoint.countryName ??
+          countryDisplayName(waypoint.countryCode, waypoint.label),
+      };
+    }
+
+    try {
+      const reverse = await nominatimService.reverse(
+        waypoint.lat,
+        waypoint.lng,
+        signal,
+      );
+      if (!reverse?.countryCode) return undefined;
+      return {
+        code: reverse.countryCode,
+        name: reverse.countryName ?? countryDisplayName(reverse.countryCode),
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   private async suggestStopovers(
@@ -185,12 +298,8 @@ export class OSRMService implements RoutingAdapter {
       const suggestions = new Set<string>();
       if (reverse?.label) suggestions.add(reverse.label);
 
-      if (reverse?.countryName) {
-        // Broaden with a nearby place search using the reverse label
-        const nearby = await nominatimService.search(
-          reverse.label,
-          signal,
-        );
+      if (reverse?.label) {
+        const nearby = await nominatimService.search(reverse.label, signal);
         for (const result of nearby.slice(0, 3)) {
           suggestions.add(result.label);
         }
@@ -205,6 +314,30 @@ export class OSRMService implements RoutingAdapter {
       return [`Stop near ${point.lat.toFixed(2)}, ${point.lng.toFixed(2)}`];
     }
   }
+}
+
+function flattenSteps(legs: OsrmLeg[]): ManeuverStep[] {
+  const steps: ManeuverStep[] = [];
+  let index = 0;
+
+  for (const leg of legs) {
+    for (const step of leg.steps ?? []) {
+      const [lng, lat] = step.maneuver.location;
+      steps.push({
+        index,
+        instruction: buildInstruction(step),
+        streetName: step.name ?? '',
+        distanceMeters: step.distance,
+        durationSeconds: step.duration,
+        type: step.maneuver.type,
+        modifier: step.maneuver.modifier,
+        location: { lat, lng },
+      });
+      index += 1;
+    }
+  }
+
+  return steps;
 }
 
 function sliceGeometryForLeg(
@@ -231,7 +364,6 @@ function findEndIndex(
     const curr = full[i];
     const dLat = curr.lat - prev.lat;
     const dLng = curr.lng - prev.lng;
-    // Fast approximate km (good enough for slicing)
     const approxKm = Math.sqrt(dLat * dLat + dLng * dLng) * 111;
     travelled += approxKm;
     index = i;
@@ -242,3 +374,10 @@ function findEndIndex(
 }
 
 export const osrmService = new OSRMService();
+
+/** Exported for tests — scenic profiles should request motorway exclusion. */
+export function buildOsrmExcludeParam(
+  profile: RouteProfile,
+): string | undefined {
+  return profile === 'scenic' ? 'motorway' : undefined;
+}

@@ -28,13 +28,23 @@ function isWaypoint(value: unknown): value is Waypoint {
 function isTripSettings(value: unknown): value is TripSettings {
   if (typeof value !== 'object' || value === null) return false;
   const s = value as Record<string, unknown>;
+  const unitOk =
+    s.unitSystem === undefined ||
+    s.unitSystem === 'metric' ||
+    s.unitSystem === 'imperial';
+  const profileOk =
+    s.routeProfile === undefined ||
+    s.routeProfile === 'fastest' ||
+    s.routeProfile === 'scenic';
   return (
     typeof s.drivingCapHours === 'number' &&
     typeof s.vehicleEfficiency === 'number' &&
     typeof s.fuelPricePerLitre === 'number' &&
     (s.fuelType === 'gasoline' ||
       s.fuelType === 'diesel' ||
-      s.fuelType === 'ev')
+      s.fuelType === 'ev') &&
+    unitOk &&
+    profileOk
   );
 }
 

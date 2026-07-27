@@ -6,12 +6,17 @@ import {
   DEFAULT_VEHICLE_EFFICIENCY,
 } from '../config/defaults';
 import type {
+  ElevationProfile,
+  ElevationSample,
   FuelType,
   LatLng,
+  ManeuverStep,
   RouteMetrics,
+  RouteProfile,
   RouteSegment,
   StopType,
   TripSettings,
+  UnitSystem,
   Waypoint,
 } from '../types';
 import { calculateFuelCost } from '../utils/fuel';
@@ -29,9 +34,15 @@ interface TripState {
   settings: TripSettings;
   segments: RouteSegment[];
   fullGeometry: LatLng[];
+  steps: ManeuverStep[];
   metrics: RouteMetrics;
   isRouting: boolean;
   routingError: string | null;
+
+  elevationProfile: ElevationProfile | null;
+  isElevationLoading: boolean;
+  elevationError: string | null;
+  elevationHover: ElevationSample | null;
 
   addWaypoint: (waypoint: Omit<Waypoint, 'id'> & { id?: string }) => void;
   insertWaypoint: (
@@ -40,6 +51,8 @@ interface TripState {
   ) => void;
   removeWaypoint: (id: string) => void;
   reorderWaypoints: (fromIndex: number, toIndex: number) => void;
+  reverseWaypoints: () => void;
+  clearAllWaypoints: () => void;
   updateWaypoint: (id: string, patch: Partial<Omit<Waypoint, 'id'>>) => void;
   setStopType: (id: string, stopType: StopType) => void;
   hydrateFromShare: (waypoints: Waypoint[], settings: TripSettings) => void;
@@ -48,14 +61,21 @@ interface TripState {
   setVehicleEfficiency: (efficiency: number) => void;
   setFuelPricePerLitre: (price: number) => void;
   setFuelType: (fuelType: FuelType) => void;
+  setUnitSystem: (unitSystem: UnitSystem) => void;
+  setRouteProfile: (routeProfile: RouteProfile) => void;
 
   setRouteResult: (
     segments: RouteSegment[],
     fullGeometry: LatLng[],
     metrics: RouteMetrics,
+    steps?: ManeuverStep[],
   ) => void;
   setRoutingStatus: (isRouting: boolean, error?: string | null) => void;
   clearRoute: () => void;
+
+  setElevationProfile: (profile: ElevationProfile | null) => void;
+  setElevationStatus: (isLoading: boolean, error?: string | null) => void;
+  setElevationHover: (sample: ElevationSample | null) => void;
 }
 
 function toWaypoint(
@@ -68,6 +88,8 @@ function toWaypoint(
     lng: waypoint.lng,
     stopType: waypoint.stopType,
     customDurationHours: waypoint.customDurationHours,
+    countryCode: waypoint.countryCode,
+    countryName: waypoint.countryName,
   };
 }
 
@@ -88,21 +110,33 @@ function recalculateFuel(
   return { ...metrics, ...fuel };
 }
 
+function mergeSettings(partial?: Partial<TripSettings>): TripSettings {
+  return {
+    drivingCapHours: DEFAULT_DRIVING_CAP_HOURS,
+    vehicleEfficiency: DEFAULT_VEHICLE_EFFICIENCY,
+    fuelPricePerLitre: DEFAULT_FUEL_PRICE,
+    fuelType: 'gasoline',
+    unitSystem: 'metric',
+    routeProfile: 'fastest',
+    ...partial,
+  };
+}
+
 export const useTripStore = create<TripState>()(
   persist(
     (set, get) => ({
       waypoints: [],
-      settings: {
-        drivingCapHours: DEFAULT_DRIVING_CAP_HOURS,
-        vehicleEfficiency: DEFAULT_VEHICLE_EFFICIENCY,
-        fuelPricePerLitre: DEFAULT_FUEL_PRICE,
-        fuelType: 'gasoline',
-      },
+      settings: mergeSettings(),
       segments: [],
       fullGeometry: [],
+      steps: [],
       metrics: EMPTY_METRICS,
       isRouting: false,
       routingError: null,
+      elevationProfile: null,
+      isElevationLoading: false,
+      elevationError: null,
+      elevationHover: null,
 
       addWaypoint: (waypoint) => {
         const next = toWaypoint(waypoint);
@@ -128,15 +162,41 @@ export const useTripStore = create<TripState>()(
         }));
       },
 
-      hydrateFromShare: (waypoints, settings) => {
+      reverseWaypoints: () => {
+        set((state) => ({
+          waypoints: [...state.waypoints].reverse(),
+        }));
+      },
+
+      clearAllWaypoints: () => {
         set({
-          waypoints,
-          settings,
+          waypoints: [],
           segments: [],
           fullGeometry: [],
+          steps: [],
           metrics: EMPTY_METRICS,
           isRouting: false,
           routingError: null,
+          elevationProfile: null,
+          elevationError: null,
+          elevationHover: null,
+          isElevationLoading: false,
+        });
+      },
+
+      hydrateFromShare: (waypoints, settings) => {
+        set({
+          waypoints,
+          settings: mergeSettings(settings),
+          segments: [],
+          fullGeometry: [],
+          steps: [],
+          metrics: EMPTY_METRICS,
+          isRouting: false,
+          routingError: null,
+          elevationProfile: null,
+          elevationError: null,
+          elevationHover: null,
         });
       },
 
@@ -211,11 +271,24 @@ export const useTripStore = create<TripState>()(
         });
       },
 
-      setRouteResult: (segments, fullGeometry, metrics) => {
+      setUnitSystem: (unitSystem) => {
+        set((state) => ({
+          settings: { ...state.settings, unitSystem },
+        }));
+      },
+
+      setRouteProfile: (routeProfile) => {
+        set((state) => ({
+          settings: { ...state.settings, routeProfile },
+        }));
+      },
+
+      setRouteResult: (segments, fullGeometry, metrics, steps = []) => {
         set({
           segments,
           fullGeometry,
           metrics,
+          steps,
           isRouting: false,
           routingError: null,
         });
@@ -229,9 +302,30 @@ export const useTripStore = create<TripState>()(
         set({
           segments: [],
           fullGeometry: [],
+          steps: [],
           metrics: EMPTY_METRICS,
           routingError: null,
+          elevationProfile: null,
+          elevationError: null,
+          elevationHover: null,
+          isElevationLoading: false,
         });
+      },
+
+      setElevationProfile: (profile) => {
+        set({
+          elevationProfile: profile,
+          isElevationLoading: false,
+          elevationError: null,
+        });
+      },
+
+      setElevationStatus: (isLoading, error = null) => {
+        set({ isElevationLoading: isLoading, elevationError: error });
+      },
+
+      setElevationHover: (sample) => {
+        set({ elevationHover: sample });
       },
     }),
     {
@@ -240,6 +334,15 @@ export const useTripStore = create<TripState>()(
         waypoints: state.waypoints,
         settings: state.settings,
       }),
+      merge: (persisted, current) => {
+        const partial = persisted as Partial<TripState> | undefined;
+        return {
+          ...current,
+          ...partial,
+          settings: mergeSettings(partial?.settings),
+          waypoints: partial?.waypoints ?? current.waypoints,
+        };
+      },
     },
   ),
 );
