@@ -1,0 +1,5 @@
+'ignore' suggested stops
+UK locale for calcs and prices etc. Petrol, not Gasoline
+choose mile or KM
+whats must visit/overnight?
+can edit individual cities by clicking edit button under the bin icon.
