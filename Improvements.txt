@@ -3,3 +3,7 @@ UK locale for calcs and prices etc. Petrol, not Gasoline
 choose mile or KM
 whats must visit/overnight?
 can edit individual cities by clicking edit button under the bin icon.
+add distance in between slots and time
+maybe pin dropping locations?
+make elevation toggle-able
+save-able routes - maybe a JSON that can be copied/pasted - at the bottom?
