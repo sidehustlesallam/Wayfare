@@ -7,3 +7,4 @@ add distance in between slots and time
 maybe pin dropping locations?
 make elevation toggle-able
 save-able routes - maybe a JSON that can be copied/pasted - at the bottom?
+landing page: what is the start city, before the mapping one we have, initial city locked in at zero, with stage 1 being the first city the user searches for on the new page.
